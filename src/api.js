@@ -24,7 +24,15 @@ export const getTopRatedMovies = () => tmdb('/movie/top_rated')
 export const getTopRatedTV = () => tmdb('/tv/top_rated')
 export const getPopularMovies = (page = 1) => tmdb('/movie/popular', { page })
 export const getPopularTV = (page = 1) => tmdb('/tv/popular', { page })
+export const getNowPlayingMovies = () => tmdb('/movie/now_playing')
 export const searchMulti = (query) => tmdb('/search/multi', { query, include_adult: false })
+
+export const formatCount = (n) => {
+  if (!n) return null
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}m`
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+  return `${n}`
+}
 
 export const getGenres = async () => {
   const [m, t] = await Promise.all([tmdb('/genre/movie/list'), tmdb('/genre/tv/list')])
