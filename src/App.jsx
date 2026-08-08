@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Watchlist from './Watchlist.jsx'
 import Settings from './Settings.jsx'
-import { Icon, Chip, Row, Grid, BottomSheet, DetailModal } from './components.jsx'
+import Categories from './Categories.jsx'
+import { Icon, Chip, Row, FeatureRow, Grid, BottomSheet, DetailModal } from './components.jsx'
 import {
   img, title, year, mediaTypeOf,
   getTrending, getTopRatedMovies, getTopRatedTV, getByGenre,
+  getPopularMovies, getPopularTV, getNowPlayingMovies,
   getGenres, getProviders, searchMulti, discoverRandom,
 } from './api.js'
 
@@ -13,8 +15,14 @@ const DEFAULT_ROWS = [
   { label: 'Comedy', id: 35 },
   { label: 'Sci-Fi & Fantasy', id: 878 },
   { label: 'Horror', id: 27 },
-  { label: 'Animation', id: 16 },
   { label: 'Documentary', id: 99 },
+]
+
+const FEATURE_TABS = [
+  { id: 'popular', label: 'Popular' },
+  { id: 'trending', label: 'Trending' },
+  { id: 'movies', label: 'Movies' },
+  { id: 'shows', label: 'TV Shows' },
 ]
 
 const LENGTHS = [
@@ -24,106 +32,29 @@ const LENGTHS = [
   { id: 'long', label: '150 min +' },
 ]
 
+const NAV_ITEMS = [
+  { id: 'explore', label: 'Home', icon: 'home' },
+  { id: 'categories', label: 'Categories', icon: 'diamond' },
+  { id: 'watchlist', label: 'Watchlist', icon: 'bookmarks' },
+  { id: 'account', label: 'Account', icon: 'account' },
+]
+
 export default function App() {
   const [tab, setTab] = useState('explore')
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [active, setActive] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
-
-  return (
-    <div className="app">
-      <header className="topbar">
-        <div className="topbar__brand">
-          <span className="topbar__mark">reel</span>
-        </div>
-        <button className="topbar__account" onClick={() => setSettingsOpen(true)} aria-label="Account">
-          <Icon.account />
-        </button>
-      </header>
-
-      <main className="app__content">
-        {tab === 'explore' ? (
-          <Explore onOpen={setActive} onSaved={() => setRefreshKey((k) => k + 1)} />
-        ) : (
-          <Watchlist refreshKey={refreshKey} />
-        )}
-      </main>
-
-      <nav className="bottom-nav">
-        <button className={`bottom-nav__item${tab === 'explore' ? ' bottom-nav__item--active' : ''}`} onClick={() => setTab('explore')}>
-          <span className="bottom-nav__pill"><Icon.compass /></span>
-          <span>Explore</span>
-        </button>
-        <button className={`bottom-nav__item${tab === 'watchlist' ? ' bottom-nav__item--active' : ''}`} onClick={() => setTab('watchlist')}>
-          <span className="bottom-nav__pill"><Icon.bookmarks /></span>
-          <span>Watchlist</span>
-        </button>
-      </nav>
-
-      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} onCleared={() => setRefreshKey((k) => k + 1)} />
-      <DetailModal item={active} onClose={() => setActive(null)} />
-    </div>
-  )
-}
-
-// ===================== EXPLORE =====================
-function Explore({ onOpen, onSaved }) {
-  const [hero, setHero] = useState([])
-  const [heroIndex, setHeroIndex] = useState(0)
-  const [topMovies, setTopMovies] = useState([])
-  const [topShows, setTopShows] = useState([])
-  const [genres, setGenres] = useState({ movie: [], tv: [] })
-  const [providers, setProviders] = useState([])
-  const [selectedGenre, setSelectedGenre] = useState(null)
-  const [sort, setSort] = useState('popularity')
-  const [categoryRows, setCategoryRows] = useState({})
-  const [filteredGrid, setFilteredGrid] = useState(null)
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState(null)
-  const [fabOpen, setFabOpen] = useState(false)
-  const heroTimer = useRef(null)
+  const [questionerOpen, setQuestionerOpen] = useState(false)
+  const [genres, setGenres] = useState({ movie: [], tv: [] })
+  const [providers, setProviders] = useState([])
 
   useEffect(() => {
-    getTrending().then((d) => setHero((d.results || []).filter((r) => r.backdrop_path).slice(0, 8)))
-    getTopRatedMovies().then((d) => setTopMovies((d.results || []).slice(0, 10)))
-    getTopRatedTV().then((d) => setTopShows((d.results || []).slice(0, 10)))
     getGenres().then(setGenres)
     getProviders().then(setProviders)
-    DEFAULT_ROWS.forEach((row) => {
-      getByGenre('movie', row.id).then((d) => {
-        setCategoryRows((prev) => ({ ...prev, [row.id]: (d.results || []).slice(0, 12) }))
-      })
-    })
   }, [])
 
-  // Hero auto-rotate every 5s
-  useEffect(() => {
-    if (!hero.length) return
-    heroTimer.current = setInterval(() => {
-      setHeroIndex((i) => (i + 1) % hero.length)
-    }, 5000)
-    return () => clearInterval(heroTimer.current)
-  }, [hero.length])
-
-  // genre filter grid
-  useEffect(() => {
-    if (!selectedGenre) {
-      setFilteredGrid(null)
-      return
-    }
-    let cancelled = false
-    Promise.all([getByGenre('movie', selectedGenre), getByGenre('tv', selectedGenre)]).then(([m, t]) => {
-      if (cancelled) return
-      let combined = [...(m.results || []), ...(t.results || [])].filter((r) => r.poster_path)
-      if (sort === 'rating') combined.sort((a, b) => b.vote_average - a.vote_average)
-      else if (sort === 'newest') combined.sort((a, b) => (year(b) || '0').localeCompare(year(a) || '0'))
-      else combined.sort((a, b) => b.popularity - a.popularity)
-      setFilteredGrid(combined.slice(0, 24))
-    })
-    return () => { cancelled = true }
-  }, [selectedGenre, sort])
-
-  // search
+  // global search (works across every tab)
   useEffect(() => {
     if (!query.trim()) {
       setSearchResults(null)
@@ -137,109 +68,179 @@ function Explore({ onOpen, onSaved }) {
     return () => clearTimeout(t)
   }, [query])
 
-  const allGenres = useMemo(() => {
-    const map = new Map()
-    ;[...genres.movie, ...genres.tv].forEach((g) => map.set(g.id, g.name))
-    return Array.from(map, ([id, name]) => ({ id, name }))
-  }, [genres])
-
-  const currentHero = hero[heroIndex]
+  const bump = () => setRefreshKey((k) => k + 1)
 
   return (
-    <div className="screen">
-      <div className="searchbar">
-        <Icon.search size={19} />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search movies & shows"
-          aria-label="Search movies and shows"
-        />
-        {query && (
-          <button className="searchbar__clear" onClick={() => setQuery('')} aria-label="Clear search"><Icon.close size={16} /></button>
-        )}
-      </div>
+    <div className="app">
+      <header className="topbar">
+        <button className="topbar__avatar" onClick={() => setTab('account')} aria-label="Account">
+          <Icon.account size={19} />
+        </button>
 
-      {searchResults ? (
-        <div className="screen__content">
-          <h2 className="row__heading">Results for "{query}"</h2>
-          <Grid items={searchResults} onOpen={onOpen} empty="No titles found. Try another search." />
-        </div>
-      ) : (
-        <>
-          {currentHero && (
-            <section className="hero">
-              <button className="hero__slide" onClick={() => onOpen(currentHero)}>
-                <img src={img(currentHero.backdrop_path, 'w1280')} alt={title(currentHero)} />
-                <div className="hero__gradient" />
-                <div className="hero__info">
-                  <span className="pill-tag pill-tag--hero">{mediaTypeOf(currentHero) === 'tv' ? 'Show' : 'Movie'} · Trending</span>
-                  <h1>{title(currentHero)}</h1>
-                  <p>{(currentHero.overview || '').slice(0, 110)}{currentHero.overview?.length > 110 ? '…' : ''}</p>
-                  <span className="btn btn--hero"><Icon.play size={15} /> View details</span>
-                </div>
-              </button>
-              <div className="hero__dots">
-                {hero.map((_, i) => (
-                  <button
-                    key={i}
-                    className={`hero__dot${i === heroIndex ? ' hero__dot--active' : ''}`}
-                    onClick={() => setHeroIndex(i)}
-                    aria-label={`Slide ${i + 1}`}
-                  />
-                ))}
-              </div>
-            </section>
+        <div className="searchbar">
+          <Icon.search size={18} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search movies & shows"
+            aria-label="Search movies and shows"
+          />
+          {query ? (
+            <button className="searchbar__clear" onClick={() => setQuery('')} aria-label="Clear search"><Icon.close size={15} /></button>
+          ) : (
+            <span className="searchbar__mic"><Icon.mic size={17} /></span>
           )}
+        </div>
 
-          <div className="filter-bar">
-            <div className="filter-bar__chips">
-              <Chip active={!selectedGenre} onClick={() => setSelectedGenre(null)}>All</Chip>
-              {allGenres.slice(0, 12).map((g) => (
-                <Chip key={g.id} active={selectedGenre === g.id} onClick={() => setSelectedGenre(g.id)}>{g.name}</Chip>
-              ))}
+        <button className="topbar__shuffle" onClick={() => setQuestionerOpen(true)} aria-label="Surprise me — random title generator">
+          <Icon.dice size={20} />
+        </button>
+      </header>
+
+      <main className="app__content">
+        {query.trim() ? (
+          <div className="screen">
+            <div className="screen__content" style={{ paddingTop: 4 }}>
+              <h2 className="row__heading">Results for "{query}"</h2>
+              <Grid items={searchResults} onOpen={setActive} empty="No titles found. Try another search." />
             </div>
-            {selectedGenre && (
-              <select className="sort-select" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort">
-                <option value="popularity">Most popular</option>
-                <option value="rating">Top rated</option>
-                <option value="newest">Newest</option>
-              </select>
-            )}
           </div>
+        ) : tab === 'explore' ? (
+          <Explore onOpen={setActive} />
+        ) : tab === 'categories' ? (
+          <Categories genres={genres} onOpen={setActive} />
+        ) : tab === 'watchlist' ? (
+          <Watchlist refreshKey={refreshKey} />
+        ) : (
+          <Settings onCleared={bump} />
+        )}
+      </main>
 
-          <div className="screen__content">
-            {filteredGrid ? (
-              <Grid items={filteredGrid} onOpen={onOpen} empty="No titles matched this filter." />
-            ) : (
-              <>
-                <Row heading="Top 10 Movies Today" items={topMovies} onOpen={onOpen} ranked />
-                <Row heading="Top 10 Shows Today" items={topShows} onOpen={onOpen} ranked />
-                {DEFAULT_ROWS.map((row) => (
-                  <Row key={row.id} heading={row.label} items={categoryRows[row.id]} onOpen={onOpen} />
-                ))}
-              </>
-            )}
-          </div>
-        </>
-      )}
-
-      <button className="fab" onClick={() => setFabOpen(true)} aria-label="Surprise me">
-        <Icon.dice />
-      </button>
+      <nav className="bottom-nav">
+        {NAV_ITEMS.map((n) => (
+          <button
+            key={n.id}
+            className={`bottom-nav__item${tab === n.id ? ' bottom-nav__item--active' : ''}`}
+            onClick={() => setTab(n.id)}
+          >
+            <span className="bottom-nav__pill">{Icon[n.icon]({ size: 21 })}</span>
+            {tab === n.id && <span>{n.label}</span>}
+          </button>
+        ))}
+      </nav>
 
       <Questioner
-        open={fabOpen}
-        onClose={() => setFabOpen(false)}
+        open={questionerOpen}
+        onClose={() => setQuestionerOpen(false)}
         genres={genres}
         providers={providers}
-        onOpenDetail={onOpen}
+        onOpenDetail={setActive}
       />
+      <DetailModal item={active} onClose={() => setActive(null)} />
     </div>
   )
 }
 
-// ===================== QUESTIONER (FAB flow) =====================
+// ===================== EXPLORE (Home) =====================
+function Explore({ onOpen }) {
+  const [trending, setTrending] = useState([])
+  const [heroIndex, setHeroIndex] = useState(0)
+  const [popularMovies, setPopularMovies] = useState([])
+  const [popularTV, setPopularTV] = useState([])
+  const [topMovies, setTopMovies] = useState([])
+  const [topShows, setTopShows] = useState([])
+  const [nowPlaying, setNowPlaying] = useState([])
+  const [categoryRows, setCategoryRows] = useState({})
+  const [featureTab, setFeatureTab] = useState('popular')
+  const heroTimer = useRef(null)
+
+  useEffect(() => {
+    getTrending().then((d) => setTrending(d.results || []))
+    getPopularMovies().then((d) => setPopularMovies((d.results || []).slice(0, 12)))
+    getPopularTV().then((d) => setPopularTV((d.results || []).slice(0, 12)))
+    getTopRatedMovies().then((d) => setTopMovies((d.results || []).slice(0, 10)))
+    getTopRatedTV().then((d) => setTopShows((d.results || []).slice(0, 10)))
+    getNowPlayingMovies().then((d) => setNowPlaying((d.results || []).slice(0, 12)))
+    DEFAULT_ROWS.forEach((row) => {
+      getByGenre('movie', row.id).then((d) => {
+        setCategoryRows((prev) => ({ ...prev, [row.id]: (d.results || []).slice(0, 12) }))
+      })
+    })
+  }, [])
+
+  const heroItems = useMemo(() => trending.filter((r) => r.backdrop_path).slice(0, 8), [trending])
+
+  useEffect(() => {
+    if (!heroItems.length) return
+    heroTimer.current = setInterval(() => {
+      setHeroIndex((i) => (i + 1) % heroItems.length)
+    }, 5000)
+    return () => clearInterval(heroTimer.current)
+  }, [heroItems.length])
+
+  const featureItems = useMemo(() => {
+    if (featureTab === 'trending') return trending.filter((r) => r.poster_path).slice(0, 10)
+    if (featureTab === 'movies') return popularMovies
+    if (featureTab === 'shows') return popularTV
+    // popular: interleave movies + shows
+    const out = []
+    for (let i = 0; i < 6; i++) {
+      if (popularMovies[i]) out.push(popularMovies[i])
+      if (popularTV[i]) out.push(popularTV[i])
+    }
+    return out
+  }, [featureTab, trending, popularMovies, popularTV])
+
+  const currentHero = heroItems[heroIndex]
+
+  return (
+    <div className="screen">
+      {currentHero && (
+        <section className="hero">
+          <button className="hero__slide" onClick={() => onOpen(currentHero)}>
+            <img src={img(currentHero.backdrop_path, 'w1280')} alt={title(currentHero)} />
+            <div className="hero__gradient" />
+            <div className="hero__info">
+              <span className="pill-tag pill-tag--hero">{mediaTypeOf(currentHero) === 'tv' ? 'Show' : 'Movie'} · Trending</span>
+              <h1>{title(currentHero)}</h1>
+            </div>
+          </button>
+          <div className="hero__dots">
+            {heroItems.map((_, i) => (
+              <button
+                key={i}
+                className={`hero__dot${i === heroIndex ? ' hero__dot--active' : ''}`}
+                onClick={() => setHeroIndex(i)}
+                aria-label={`Slide ${i + 1}`}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div className="filter-bar">
+        <div className="filter-bar__chips">
+          {FEATURE_TABS.map((t) => (
+            <Chip key={t.id} active={featureTab === t.id} onClick={() => setFeatureTab(t.id)}>{t.label}</Chip>
+          ))}
+        </div>
+      </div>
+
+      <FeatureRow items={featureItems} onOpen={onOpen} />
+
+      <div className="screen__content">
+        <Row heading="New Releases" items={nowPlaying} onOpen={onOpen} />
+        <Row heading="Top 10 Movies Today" items={topMovies} onOpen={onOpen} ranked />
+        <Row heading="Top 10 Shows Today" items={topShows} onOpen={onOpen} ranked />
+        {DEFAULT_ROWS.map((row) => (
+          <Row key={row.id} heading={row.label} items={categoryRows[row.id]} onOpen={onOpen} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ===================== QUESTIONER (random title generator) =====================
 function Questioner({ open, onClose, genres, providers, onOpenDetail }) {
   const [step, setStep] = useState(0)
   const [answers, setAnswers] = useState({ mediaType: '', genre: '', length: '', provider: '' })
